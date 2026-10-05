@@ -14,8 +14,8 @@ to the wrong place.
                      1  string ip
                      2  int32  port
       2  Configuration config
-           1  map<string, bytes> environment_variables
-                (each entry is a message: 1 key, 2 value)
+           1  repeated BytesKeyValue environment_variables
+                (each entry: 1 key string, 2 optional bytes value)
 """
 from __future__ import annotations
 

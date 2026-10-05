@@ -27,6 +27,8 @@ In order, each one winning outright if it is set:
 | `__config__.gateway` | the host node's plaintext gateway, which a service is always allowed to reach |
 
 `LISTEN_PORT` defaults to **4040**, the same number the slot declares.
+Keep it at 4040 unless you also change `api[].port`. A different listen
+port is not the declared slot, so `nodo tunnel <instance> 4040` misses it.
 
 `nodo execute` passes those names with `-e`. The packer does not record the
 `envs` list in `service.json`. The names still work as launch-time variables.
@@ -80,22 +82,32 @@ work without a reverse connection. This service does not open one.
 This process does not read gRPC method names. It forwards every byte.
 
 The node identifies a local instance by the source IP of the gateway TCP
-connection. The splice opens that connection from this instance. Every RPC
-that arrives on the slot therefore runs as **this instance**, not as the
-original caller.
+connection. The splice opens that connection from this instance. For RPCs
+that use `require_caller`, that check returns this instance and does not
+require a `Client`. That skip is the source IP only. It is not a rewrite
+of the request.
 
 That means:
 
-- RPCs that require a `Client` skip that check.
-- `StartService` treats this instance as the parent. A `RecursionGuard` on
-  the request is not applied for a local instance. Each start is a new tree.
-  Child cost comes from this instance's balance.
-- `ModifyServiceSystemResources` changes **this** instance.
+- Client-auth RPCs (`StartService`, `GetPeerInfo`, `ResolveNetwork`,
+  `IntroducePeer`, `AssociateClient`, `GenerateDepositToken`, `Payable`,
+  `GetServiceEstimatedCost`, `GetResourceAvailability`, `GetService`)
+  skip the Client check because of this instance IP.
+- `StartService` with **no** `Client` in the envelope: this instance is
+  the parent. RecursionGuard is off. Each start is a new tree. Child cost
+  comes from this instance's balance.
+- `StartService` **with** a `Client` in the envelope: RecursionGuard is
+  on. That `client_id` is the parent and is billed. The IP skip still
+  applies, so a missing or unknown Client is not required for auth.
+- `ModifyServiceSystemResources` changes **this** instance (local-address).
 - `GetPeerInfo` returns the node's public announcement: public key, URIs,
   payment contracts, reputation proofs. It does not return a mnemonic or a
   private key. This process does not read host keys.
 - Token RPCs (`StopService`, `ModifyDeposit`, `GetMetrics`, `ServiceTunnel`,
   `Observe`) still need the instance token in the message.
+- `Chat` is not local-instance-exempt. It still needs `ChatMessage.client_id`
+  bound to a peer.
+- `GenerateClient` has no auth.
 
 The slot is a full `celaut.Gateway`. Current RPCs: `StartService`,
 `StopService`, `ModifyDeposit`, `GetPeerInfo`, `ResolveNetwork`,
@@ -104,9 +116,9 @@ The slot is a full `celaut.Gateway`. Current RPCs: `StartService`,
 `GetResourceAvailability`, `GetService`, `GetMetrics`, `ServiceTunnel`,
 `Observe`, `Chat`.
 
-Anyone who can connect to this slot has that identity. Do not publish the
-slot unless that is what you want. Use `nodo tunnel` when only the parent
-host must reach it.
+Anyone who can connect to this slot has that identity on the Client-auth
+RPCs. Do not publish the slot unless that is what you want. Use
+`nodo tunnel` when only the parent host must reach it.
 
 ## Network
 
