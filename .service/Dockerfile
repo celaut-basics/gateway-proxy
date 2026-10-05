@@ -7,5 +7,9 @@ RUN apt-get update \
     && apt-get install --no-install-recommends -y python3 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY service /service
+# The packer build context is .service/. Project files land under
+# .service/service/. A source that starts with "./" is rewritten to that
+# tree (COPY ./service -> COPY service/service). A source without the dot
+# is not rewritten and the build fails.
+COPY ./service /service
 RUN chmod +x /service/entrypoint.py
