@@ -60,6 +60,11 @@ pass `TARGET` / `TARGET_PORT` for the TLS port. If they speak plaintext --
 services, or your own node through a delegation tunnel -- the default is the
 right one.
 
+The node can disable the plaintext port (`network.GATEWAY_PLAINTEXT_PORT: 0`).
+A config without that key also disables it. Then `__config__.gateway` is the
+TLS port, and the clients of this instance must speak TLS. The splice does not
+change. The log line `forwarding to <ip>:<port>` shows the port in use.
+
 TLS on the target does not change who the node thinks is calling. See
 [Identity](#identity).
 
