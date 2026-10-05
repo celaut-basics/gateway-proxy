@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Tuple
+from typing import Optional, Tuple
 
 log = logging.getLogger("gateway-proxy")
 
@@ -63,7 +63,11 @@ async def handle(
                 pass
 
 
-async def serve(listen_port: int, target: Tuple[str, int]) -> None:
+async def serve(
+    listen_port: int,
+    target: Tuple[str, int],
+    bound: Optional[asyncio.Future] = None,
+) -> None:
     server = await asyncio.start_server(
         lambda r, w: handle(r, w, target),
         host="0.0.0.0",
@@ -71,7 +75,10 @@ async def serve(listen_port: int, target: Tuple[str, int]) -> None:
         reuse_address=True,
     )
     sockets = server.sockets or []
-    bound = ", ".join(str(s.getsockname()) for s in sockets) or str(listen_port)
-    log.info("listening on %s, forwarding to %s:%s", bound, target[0], target[1])
+    bound_s = ", ".join(str(s.getsockname()) for s in sockets) or str(listen_port)
+    if bound is not None and not bound.done():
+        port = sockets[0].getsockname()[1] if sockets else listen_port
+        bound.set_result(port)
+    log.info("listening on %s, forwarding to %s:%s", bound_s, target[0], target[1])
     async with server:
         await server.serve_forever()
