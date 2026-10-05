@@ -37,8 +37,9 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(data["api"][0]["transport"], "tcp")
         self.assertEqual(data["network"][0]["tags"], ["*"])
         self.assertTrue(data["network"][0]["prose"])
-        self.assertGreaterEqual(data["resources"]["at_init"]["mem_limit"], 128000000)
-        self.assertGreaterEqual(data["resources"]["at_init"]["disk_space"], 128000000)
+        # Node floors: MIN_MEM_MIB and MIN_ROOTFS_BYTES are 128 MiB (134217728).
+        self.assertGreaterEqual(data["resources"]["at_init"]["mem_limit"], 134217728)
+        self.assertGreaterEqual(data["resources"]["at_init"]["disk_space"], 134217728)
 
     def test_pack_config_includes_only_service(self):
         data = json.loads(PACK_CONFIG.read_text())
