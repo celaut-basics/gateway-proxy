@@ -34,8 +34,9 @@ port is not the declared slot, so `nodo tunnel <instance> 4040` misses it.
 `envs` list in `service.json`. The names still work as launch-time variables.
 
 ```bash
-# Pack, then run. execute may pick this node or a peer.
-nodo pack .
+# Pack the tree of the node's architecture, then run.
+# execute may pick this node or a peer.
+nodo pack amd64          # or: nodo pack arm64
 nodo execute gateway-proxy
 
 # Front *our* gateway from the instance (often after a run on a peer).
@@ -132,14 +133,34 @@ which nodo always allows. Open egress is for the `TARGET=` case, where the
 other end is a different node for every operator and cannot be enumerated in
 the spec.
 
-## Pack
+## Pack: one tree per architecture
+
+A Celaut service has one architecture (`service.json` → `architecture`). So
+this repo has one pack root for each architecture, as in
+`celaut-basics/demo-service`:
 
 ```bash
-nodo pack .
+nodo pack amd64          # linux/amd64
+nodo pack arm64          # linux/arm64
 ```
 
-`service.json` is `linux/amd64`. Change `architecture` to match the packer
-(`linux/arm64` on an Asahi/ARM host).
+```
+amd64/  arm64/           pack roots
+├── .service/            Dockerfile, service.json, pack_config.json (one set per arch)
+└── service -> ../service
+service/                 shared source
+```
+
+`nodo pack <dir>` reads only `<dir>/.service/` and copies `<dir>` to its
+cache. The copy follows symlinks, so `service/` reaches each pack root.
+The two `.service/` sets are real files. Today only `architecture` and the
+first comment of the Dockerfile differ. The `debian:bookworm-slim` pin is a
+multi-arch index, so one digest serves both. `tests/test_layout.py` checks
+the shape.
+
+To pack the architecture that is not the host's, the packer host needs a
+binfmt_misc handler for it, and the packer must be enabled for it
+(`packer.ARM_PACKER_SUPPORT` / `X86_PACKER_SUPPORT`).
 
 The Dockerfile copies with `COPY ./service /service`. The leading `./` is
 required. The packer rewrites that source into the `.service/service/` tree.
