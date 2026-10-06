@@ -1,4 +1,3 @@
-import os
 import sys
 import unittest
 from pathlib import Path
@@ -14,7 +13,14 @@ from config import (  # noqa: E402
     resolve_listen_port,
     resolve_target,
 )
-from wire import configuration, configuration_file, instance, uri, uri_slot  # noqa: E402
+from wire import (  # noqa: E402
+    _ld,
+    configuration,
+    configuration_file,
+    instance,
+    uri,
+    uri_slot,
+)
 
 
 class GatewayUriTests(unittest.TestCase):
@@ -94,6 +100,33 @@ class ResolveTests(unittest.TestCase):
     def test_listen_port_defaults_to_4040(self):
         self.assertEqual(resolve_listen_port({}), 4040)
         self.assertEqual(resolve_listen_port({"LISTEN_PORT": "9000"}), 9000)
+
+    def test_TARGET_HOST_and_PORT_together(self):
+        self.assertEqual(
+            resolve_target(
+                {"TARGET_HOST": "10.9.8.7", "TARGET_PORT": "443"},
+                self.uris,
+            ),
+            ("10.9.8.7", 443),
+        )
+
+    def test_bracketed_ipv6_TARGET(self):
+        self.assertEqual(
+            resolve_target({"TARGET": "[2001:db8::1]:4040"}, self.uris),
+            ("2001:db8::1", 4040),
+        )
+
+    def test_unknown_config_fields_are_ignored(self):
+        buf = configuration_file(
+            gateway=instance(uri_slot(uri("192.168.200.1", 4041))),
+            config=configuration(LISTEN_PORT="9"),
+        )
+        buf += _ld(3, b"ignored-network")
+        buf += _ld(4, b"ignored-sysresources")
+        from config import environment_variables, gateway_uris
+
+        self.assertEqual(gateway_uris(buf), [("192.168.200.1", 4041)])
+        self.assertEqual(environment_variables(buf), {"LISTEN_PORT": "9"})
 
 
 if __name__ == "__main__":

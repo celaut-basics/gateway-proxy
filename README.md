@@ -1,14 +1,14 @@
 # gateway-proxy
 
 A TCP splice packaged as a [Celaut](https://github.com/celaut-project/nodo) service.
-Each accepted connection is a byte pipe to a gateway -- no protocol awareness, so
-the same binary fronts plaintext gRPC or TLS.
+Each accepted connection is a byte pipe to a gateway. The process has no
+protocol awareness, so the same binary fronts plaintext gRPC or TLS.
 
 It exists to **expose a node through a service slot**. `ServiceTunnel` already
-reaches a *service* without publishing a port; this reaches a *node*. The
+reaches a *service* without publishing a port. This reaches a *node*. The
 gateway of a peer that does not publish itself (`DISABLE_EXPOSE_OUTSIDE`, NAT)
-becomes the declared slot of an instance you launched there, which you can then
-hand to others, tunnel through your own node, or advertise as another URI for
+becomes the declared slot of an instance you launched there. You can then
+tunnel that slot through your own node, or advertise it as another URI for
 that peer.
 
 One instance per peer is the intended shape.
@@ -27,25 +27,47 @@ In order, each one winning outright if it is set:
 | `__config__.gateway` | the host node's plaintext gateway, which a service is always allowed to reach |
 
 `LISTEN_PORT` defaults to **4040**, the same number the slot declares.
+Keep it at 4040 unless you also change `api[].port`. A different listen
+port is not the declared slot, so `nodo tunnel <instance> 4040` misses it.
 
-`nodo execute` passes those names with `-e`:
+`nodo execute` passes those names with `-e`. The packer does not record the
+`envs` list in `service.json`. The names still work as launch-time variables.
 
 ```bash
-# On a peer, expose that peer's own gateway as a service slot.
-nodo execute gateway-proxy --remote
+# Pack the tree of the node's architecture, then run.
+# execute may pick this node or a peer.
+nodo pack amd64          # or: nodo pack arm64
+nodo execute gateway-proxy
 
-# On a peer, front *our* gateway instead.
-nodo execute gateway-proxy --remote -e TARGET 203.0.113.10:4040
+# Front *our* gateway from the instance (often after a run on a peer).
+nodo execute -e TARGET 203.0.113.10:4040 gateway-proxy
 
 # Same host, TLS port instead of the plaintext one __config__ names.
-nodo execute gateway-proxy --remote -e TARGET_PORT 443
+nodo execute -e TARGET_PORT 443 gateway-proxy
+
+# Pin the run to one peer (no balancer). Testing and development only.
+nodo force_execution <peer-id> gateway-proxy
+
+# Reach the slot from this host. execute prints a local address only.
+nodo tunnel <instance> 4040
+nodo kill <instance>
 ```
 
+`nodo execute --remote` was removed. Do not pass it.
+
 `__config__.gateway` is the **plaintext** port (what a service speaks). Other
-nodes speak TLS to `GATEWAY_PORT`. If the clients of this instance are peers,
-pass `TARGET` / `TARGET_PORT` for the TLS port; if they are services -- or your
-own node reaching in through a delegation tunnel -- the default is the right
-one.
+nodes speak TLS to `GATEWAY_PORT`. If the clients of this instance speak TLS,
+pass `TARGET` / `TARGET_PORT` for the TLS port. If they speak plaintext --
+services, or your own node through a delegation tunnel -- the default is the
+right one.
+
+The node can disable the plaintext port (`network.GATEWAY_PLAINTEXT_PORT: 0`).
+A config without that key also disables it. Then `__config__.gateway` is the
+TLS port, and the clients of this instance must speak TLS. The splice does not
+change. The log line `forwarding to <ip>:<port>` shows the port in use.
+
+TLS on the target does not change who the node thinks is calling. See
+[Identity](#identity).
 
 ## Two deployments
 
@@ -54,12 +76,55 @@ instance on each peer, target unset. The instance's slot is that peer's
 gateway. Anyone who can reach the instance -- because the peer published the
 slot, or because our node tunnelled it back (`DELEGATION_TUNNEL_POLICY`) --
 speaks Gateway to that peer. We already had a connection to them (that is how
-we launched the service); this is how *others* get one.
+we launched the service). This is how *others* get one.
 
 **Expose us through our peers.** Launch one instance on each reachable peer,
 `TARGET` set to our gateway. Anyone who can reach that peer can reach us. The
-peer must be able to dial us; if we are behind NAT, this direction does not
-work without a reverse connection, which this service does not open.
+peer must be able to dial us. If we are behind NAT, this direction does not
+work without a reverse connection. This service does not open one.
+
+## Identity
+
+This process does not read gRPC method names. It forwards every byte.
+
+The node identifies a local instance by the source IP of the gateway TCP
+connection. The splice opens that connection from this instance. For RPCs
+that use `require_caller`, that check returns this instance and does not
+require a `Client`. That skip is the source IP only. It is not a rewrite
+of the request.
+
+That means:
+
+- Client-auth RPCs (`StartService`, `GetPeerInfo`, `ResolveNetwork`,
+  `IntroducePeer`, `AssociateClient`, `GenerateDepositToken`, `Payable`,
+  `GetServiceEstimatedCost`, `GetResourceAvailability`, `GetService`)
+  skip the Client check because of this instance IP.
+- `StartService` with **no** `Client` in the envelope: this instance is
+  the parent. RecursionGuard is off. Each start is a new tree. Child cost
+  comes from this instance's balance.
+- `StartService` **with** a `Client` in the envelope: RecursionGuard is
+  on. That `client_id` is the parent and is billed. The IP skip still
+  applies, so a missing or unknown Client is not required for auth.
+- `ModifyServiceSystemResources` changes **this** instance (local-address).
+- `GetPeerInfo` returns the node's public announcement: public key, URIs,
+  payment contracts, reputation proofs. It does not return a mnemonic or a
+  private key. This process does not read host keys.
+- Token RPCs (`StopService`, `ModifyDeposit`, `GetMetrics`, `ServiceTunnel`,
+  `Observe`) still need the instance token in the message.
+- `Chat` is not local-instance-exempt. It still needs `ChatMessage.client_id`
+  bound to a peer.
+- `GenerateClient` has no auth.
+
+The slot is a full `celaut.Gateway`. Current RPCs: `StartService`,
+`StopService`, `ModifyDeposit`, `GetPeerInfo`, `ResolveNetwork`,
+`IntroducePeer`, `GenerateClient`, `AssociateClient`, `GenerateDepositToken`,
+`Payable`, `ModifyServiceSystemResources`, `GetServiceEstimatedCost`,
+`GetResourceAvailability`, `GetService`, `GetMetrics`, `ServiceTunnel`,
+`Observe`, `Chat`.
+
+Anyone who can connect to this slot has that identity on the Client-auth
+RPCs. Do not publish the slot unless that is what you want. Use
+`nodo tunnel` when only the parent host must reach it.
 
 ## Network
 
@@ -68,14 +133,37 @@ which nodo always allows. Open egress is for the `TARGET=` case, where the
 other end is a different node for every operator and cannot be enumerated in
 the spec.
 
-## Pack
+## Pack: one tree per architecture
+
+A Celaut service has one architecture (`service.json` → `architecture`). So
+this repo has one pack root for each architecture, as in
+`celaut-basics/demo-service`:
 
 ```bash
-nodo pack .
+nodo pack amd64          # linux/amd64
+nodo pack arm64          # linux/arm64
 ```
 
-`service.json` is `linux/amd64`. Change `architecture` to match the packer
-(`linux/arm64` on an Asahi/ARM host).
+```
+amd64/  arm64/           pack roots
+├── .service/            Dockerfile, service.json, pack_config.json (one set per arch)
+└── service -> ../service
+service/                 shared source
+```
+
+`nodo pack <dir>` reads only `<dir>/.service/` and copies `<dir>` to its
+cache. The copy follows symlinks, so `service/` reaches each pack root.
+The two `.service/` sets are real files. Today only `architecture` and the
+first comment of the Dockerfile differ. The `debian:bookworm-slim` pin is a
+multi-arch index, so one digest serves both. `tests/test_layout.py` checks
+the shape.
+
+To pack the architecture that is not the host's, the packer host needs a
+binfmt_misc handler for it, and the packer must be enabled for it
+(`packer.ARM_PACKER_SUPPORT` / `X86_PACKER_SUPPORT`).
+
+The Dockerfile copies with `COPY ./service /service`. The leading `./` is
+required. The packer rewrites that source into the `.service/service/` tree.
 
 ## Tests
 
@@ -85,4 +173,5 @@ python3 -m unittest discover -s tests -v
 
 No protobuf library on either side: `tests/wire.py` encodes the same fields
 `service/config.py` decodes. If a fixture written there cannot be read here,
-the decoder is wrong.
+the decoder is wrong. `tests/test_protoc.py` also decodes a `protoc --encode`
+fixture of `celaut.ConfigurationFile`.

@@ -18,28 +18,17 @@ class SpliceTests(unittest.IsolatedAsyncioTestCase):
             await self.received.put(data)
             writer.write(b"pong:" + data)
             await writer.drain()
+            writer.write_eof()
             writer.close()
             await writer.wait_closed()
 
         self.backend = await asyncio.start_server(echo, "127.0.0.1", 0)
         self.backend_port = self.backend.sockets[0].getsockname()[1]
+        bound = asyncio.get_running_loop().create_future()
         self.proxy_task = asyncio.create_task(
-            serve(0, ("127.0.0.1", self.backend_port))
+            serve(0, ("127.0.0.1", self.backend_port), bound=bound)
         )
-        # serve() binds 0.0.0.0:listen; we passed 0 so the OS picks. Grab it.
-        await asyncio.sleep(0.05)
-        # start_server inside serve uses listen_port=0; recover via the task's
-        # server. Easier: bind a known port.
-        self.proxy_task.cancel()
-        try:
-            await self.proxy_task
-        except (asyncio.CancelledError, Exception):
-            pass
-        self.listen_port = 18765
-        self.proxy_task = asyncio.create_task(
-            serve(self.listen_port, ("127.0.0.1", self.backend_port))
-        )
-        await asyncio.sleep(0.05)
+        self.listen_port = await asyncio.wait_for(bound, timeout=2)
 
     async def asyncTearDown(self):
         self.proxy_task.cancel()
@@ -54,11 +43,29 @@ class SpliceTests(unittest.IsolatedAsyncioTestCase):
         reader, writer = await asyncio.open_connection("127.0.0.1", self.listen_port)
         writer.write(b"ping")
         await writer.drain()
+        writer.write_eof()
         reply = await asyncio.wait_for(reader.read(65536), timeout=2)
         writer.close()
         await writer.wait_closed()
         self.assertEqual(await self.received.get(), b"ping")
         self.assertEqual(reply, b"pong:ping")
+
+    async def test_a_closed_target_does_not_hang_the_client(self):
+        bound = asyncio.get_running_loop().create_future()
+        task = asyncio.create_task(serve(0, ("127.0.0.1", 1), bound=bound))
+        port = await asyncio.wait_for(bound, timeout=2)
+        try:
+            reader, writer = await asyncio.open_connection("127.0.0.1", port)
+            data = await asyncio.wait_for(reader.read(16), timeout=2)
+            self.assertEqual(data, b"")
+            writer.close()
+            await writer.wait_closed()
+        finally:
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
 
 
 if __name__ == "__main__":
