@@ -4,9 +4,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SERVICE_JSON = ROOT / ".service" / "service.json"
-DOCKERFILE = ROOT / ".service" / "Dockerfile"
-PACK_CONFIG = ROOT / ".service" / "pack_config.json"
+ARCHES = ("amd64", "arm64")
 
 
 def _rewrite_copy_sources(line: str) -> str:
@@ -29,8 +27,13 @@ def _rewrite_copy_sources(line: str) -> str:
 
 class ManifestTests(unittest.TestCase):
     def test_service_json_is_object_json(self):
-        data = json.loads(SERVICE_JSON.read_text())
-        self.assertEqual(data["architecture"], "linux/amd64")
+        for arch in ARCHES:
+            with self.subTest(arch=arch):
+                self._check_service_json(arch)
+
+    def _check_service_json(self, arch):
+        data = json.loads((ROOT / arch / ".service" / "service.json").read_text())
+        self.assertEqual(data["architecture"], "linux/" + arch)
         self.assertEqual(data["tag"], "gateway-proxy")
         self.assertEqual(data["init"]["entry_path"], ["service", "entrypoint.py"])
         self.assertEqual(data["api"][0]["port"], 4040)
@@ -42,14 +45,16 @@ class ManifestTests(unittest.TestCase):
         self.assertGreaterEqual(data["resources"]["at_init"]["disk_space"], 134217728)
 
     def test_pack_config_includes_only_service(self):
-        data = json.loads(PACK_CONFIG.read_text())
-        self.assertEqual(data["include"], ["service"])
-        self.assertIn("tests/", data["ignore"])
+        for arch in ARCHES:
+            data = json.loads((ROOT / arch / ".service" / "pack_config.json").read_text())
+            self.assertEqual(data["include"], ["service"], arch)
+            self.assertIn("tests/", data["ignore"], arch)
 
     def test_dockerfile_copy_sources_start_with_dot(self):
         copies = [
             line
-            for line in DOCKERFILE.read_text().splitlines()
+            for arch in ARCHES
+            for line in (ROOT / arch / ".service" / "Dockerfile").read_text().splitlines()
             if line.strip().startswith("COPY ")
         ]
         self.assertTrue(copies)

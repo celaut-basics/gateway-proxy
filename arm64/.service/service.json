@@ -1,0 +1,36 @@
+{
+    "tag": "gateway-proxy",
+    "architecture": "linux/arm64",
+    "init": {
+        "entry_path": ["service", "entrypoint.py"]
+    },
+    "api": [
+        {
+            "port": 4040,
+            "transport": "tcp",
+            "protocol": ["grpc"]
+        }
+    ],
+    "envs": [
+        "TARGET",
+        "TARGET_HOST",
+        "TARGET_PORT",
+        "LISTEN_PORT"
+    ],
+    "network": [
+        {
+            "tags": ["*"],
+            "prose": "The other end of the pipe is passed at launch (TARGET) and is a different node for every operator, so it cannot be enumerated in the spec. Local-gateway mode only needs the host gateway, which nodo always allows; the open egress is for pointing TARGET at our own node when this instance is running on a peer."
+        }
+    ],
+    "resources": {
+        "at_init": {
+            "mem_limit": 134217728,
+            "disk_space": 256000000
+        },
+        "at_most": {
+            "mem_limit": 268435456,
+            "disk_space": 256000000
+        }
+    }
+}
