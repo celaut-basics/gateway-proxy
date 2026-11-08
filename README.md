@@ -11,6 +11,11 @@ becomes the declared slot of an instance you launched there. You can then
 tunnel that slot through your own node, or advertise it as another URI for
 that peer.
 
+**Release:** [`v2`](https://github.com/celaut-basics/gateway-proxy/releases/tag/v2),
+`51d8b2.celaut.bee` (linux/amd64, service id
+`51d8b2143aa0c1dca5d12798d013fff70dd25ce6eecd67ca21ee91aeafeed675`). Tested with nodo
+`dev` a97148dd (2026-11-08): clean-registry import, then `GetPeerInfo` through the slot.
+
 One instance per peer is the intended shape.
 
 This is not `ServiceTunnel`. `ServiceTunnel` is `token + slot` to an instance.
@@ -30,8 +35,10 @@ In order, each one winning outright if it is set:
 Keep it at 4040 unless you also change `api[].port`. A different listen
 port is not the declared slot, so `nodo tunnel <instance> 4040` misses it.
 
-`nodo execute` passes those names with `-e`. The packer does not record the
-`envs` list in `service.json`. The names still work as launch-time variables.
+`nodo execute` passes those names with `-e`. Since nodo#582 the packer writes the
+`envs` names of `service.json` into the spec (`Container.environment_variables`), so
+`nodo service_envs <id>` lists them, and `nodo execute` asks for each one that `-e`
+does not give (nodo#574; Enter leaves it unset, and with no terminal the launch goes on).
 
 ```bash
 # Pack the tree of the node's architecture, then run.
