@@ -29,7 +29,7 @@ In order, each one winning outright if it is set:
 |---|---|
 | `TARGET=host:port` | a complete override -- typically *our* gateway, when the instance is running on a peer |
 | `TARGET_HOST` / `TARGET_PORT` | either piece, the other falling back to `__config__.gateway` |
-| `__config__.gateway` | the host node's plaintext gateway, which a service is always allowed to reach |
+| `__config__.gateway` | the host node's plaintext gateway; the node writes it, and lets the service reach it, because `service.json` has `"uses_gateway": true` (nodo #648) |
 
 `LISTEN_PORT` defaults to **4040**, the same number the slot declares.
 Keep it at 4040 unless you also change `api[].port`. A different listen
@@ -61,6 +61,11 @@ nodo kill <instance>
 ```
 
 `nodo execute --remote` was removed. Do not pass it.
+
+Since nodo #648 (dev 2026-11-12) a service gets the gateway only if it declares it:
+`"uses_gateway": true` in `service.json` makes the packer write the gateway stack in
+`container.node_protocol_stack`. Without it there is no `gateway` in `__config__` and no
+firewall rule to the gateway ports, so the default target would not exist.
 
 `__config__.gateway` is the **plaintext** port (what a service speaks). Other
 nodes speak TLS to `GATEWAY_PORT`. If the clients of this instance speak TLS,
