@@ -39,6 +39,8 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(data["api"][0]["port"], 4040)
         self.assertEqual(data["api"][0]["transport"], "tcp")
         self.assertEqual(data["network"][0]["tags"], ["*"])
+        # nodo #648: the default target (__config__.gateway) exists only with this.
+        self.assertIs(data.get("uses_gateway"), True)
         self.assertTrue(data["network"][0]["prose"])
         # Node floors: MIN_MEM_MIB and MIN_ROOTFS_BYTES are 128 MiB (134217728).
         self.assertGreaterEqual(data["resources"]["at_init"]["mem_limit"], 134217728)
